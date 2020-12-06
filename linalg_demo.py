@@ -9,6 +9,8 @@ References:
 import time
 import random
 import math
+import csv
+import json
 import numpy as np
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
@@ -50,15 +52,14 @@ def grad_desc_simple():
     print("The local minimum occurs at", cur_x)
     plot_regression_line(perfect_samples[:, 0], perfect_samples[:, 1])
 
-def grad_desc_less_simple():
+def grad_desc(x, y, function, dfunction):
     # theta_0 = theta_0 - alpha*(sum(H(x_i) - y_i)))
     # theta_1 = theta_0 - alpha*(sum(H(x_i) - y_i))*x_i)
     """ ripped from 
     https://towardsdatascience.com/implement-gradient-descent-in-python-9b93ed7108d1
     Just steps through a graph to minima
     """
-    f = lambda x, z: (3*z) + (x+5)**2 
-    perfect_samples = np.array([(x, z, f(x, z)) for x,z in two_range(-10,10)])
+    samples = np.array([(x, f(x, z)) for x in two_range(-10,10)])
     print(perfect_samples)
     plot_regression_line(perfect_samples[:, 0], perfect_samples[:, 1], perfect_samples[:, 2])
     cur_x = 3 # The algorithm starts at x=3 
@@ -91,7 +92,86 @@ def grad_desc_less_simple():
     print("The local minimum occurs at", cur_x)
     plot_regression_line(perfect_samples[:, 0], perfect_samples[:, 1], perfect_samples[:, 2])
 
+def grad_decent_real():
+    """!
+    This finds some info from real data
+    """
+    #reads in data
+    test_data = []
+    with open("Car_details_v3.csv", 'r') as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            test_data.append(row)
+    # lets take a look at the data
+    print(dict_print(test_data[3]))
+    print("data length:", len(test_data))
+    # ovbiously max power is the most important, lets look at that and clean it
+    keys_to_delete = []
+    for row in test_data:
+        if 'max_power' not in row: 
+            print("deleting row: ")
+            print(dict_print(row))
+            keys_to_delete.append(row)
+            continue
+        if 'engine' not in row:
+            print("deleting row: ")
+            print(dict_print(row))
+            keys_to_delete.append(row)
+            continue
+        if row['max_power'] == '':
+            print("deleting row: ")
+            print(dict_print(row))
+            keys_to_delete.append(row)
+            continue
+        if row['engine'] == '':
+            print("deleting row: ")
+            print(dict_print(row))
+            keys_to_delete.append(row)
+            continue
+        #special cases of garbage
+        if row['max_power'] == ' bhp':
+            print("deleting row: ")
+            print(dict_print(row))
+            keys_to_delete.append(row)
+            continue
 
+    # getting rid of all the bad data in probably a dumb way
+    print(len(test_data))
+    for row in keys_to_delete:
+        test_data.remove(row)
+     
+    print(len(test_data))
+    print(f"deleted {len(keys_to_delete)}")
+    #so the above finnaly worked to delete the junk
+    """
+    it would be nice to make this something we can work with, lets make a graph 
+    and get rid if the units
+    """
+    power = [float(row['max_power'].strip(" bhp")) for row in test_data]
+    engine_s = [float(row['engine'].strip(" CC")) for row in test_data]
+    
+    # lets plot some
+    plot_regression_line(power, engine_s)
+
+    # lets see what our line of best fit finds
+    shaped_x = np.array(power)
+    print(shaped_x)
+    # we need to add 1 to X, this represent the non varible term
+    shaped_x = np.c_[ np.ones(len(power)), shaped_x ]
+    print(shaped_x)
+    shaped_y = np.array(engine_s)
+    print(shaped_y)
+    theta = normal_equation(shaped_x, shaped_y)
+    print(theta)
+    # now we have theta, lets slap that line in and see how she looks (prob bad)
+    plot_regression_line(np.array(power), np.array(engine_s), b=theta)
+
+
+def dict_print(d):
+    """!
+    you still need to do the print yourself
+    """
+    return json.dumps((dict(d)), indent=4, sort_keys=True)
 
 def plot_regression_line(x, y, z=None, b=None):
     """
@@ -105,7 +185,7 @@ def plot_regression_line(x, y, z=None, b=None):
         ax.scatter(x, y, z, color = "m", marker = "o", s = 30)
     else:
         plt.scatter(x, y, color = "m", marker = "o", s = 30)
-    if b:
+    if b is not None:
         # predicted response vector
         y_pred = b[0] + b[1]*x 
         # plotting the regression line
@@ -130,10 +210,12 @@ def normal_equation(X, y):
     # lets do it in pieces
     # Xt is transpose of X, bassically flip and reverse of matrix
     Xt = np.transpose(X)
+    print("X transpose is: ")
+    print(Xt)
     # Xt dot X is the dot product (matrix mutiplication) of the two. remember that for this to work, they must be (m,n) * (n,m) dimentions and therefor Xt dot X != X dot Xt
     Xt_dot_X = np.dot(Xt, X)
-    # we can get our other side, Xt dot y, while we are in the mood for dots
-    Xt_dot_y = np.dot(Xt, X)
+    print("X transpose dot X is:")
+    print(Xt_dot_X)
     # now for the inversion of Xt_dot_X, this is the most computationaly heavy step, im told its O(n^3), so over about n = 10,000 gradient decent, 
     # might be a better choice. n is the number of features
     try:
@@ -142,8 +224,14 @@ def normal_equation(X, y):
         print("a sigular matrix is not invertable, it will be div zero error")
         print("but numpy.linalg.pinv gives us a way to fake it out by replacing zero with really small floats")
         inv_Xt_dot_X = np.linalg.pinv(Xt_dot_X)
-    # so theta is
-    theta = np.dot(inv_Xt_dot_X, Xt_dot_y)
+    print("now lets do inv_Xt_dot_X dot Xt")
+    inv_Xt_dot_X_dot_Xt = np.dot(inv_Xt_dot_X, Xt)
+    print("X transpose dot X inverted dot X transpose is:")
+    print(inv_Xt_dot_X_dot_Xt)
+    print("last step, now we do inv_Xt_dot_X_dot_Xt_dot_y.  this will be theta matrix")
+    theta = np.dot(inv_Xt_dot_X_dot_Xt, y)
+    print("X transpose dot X inverted dot X transpose dot y (theta) is:")
+    print(theta)
     print("theta calcutated to be: ".format(theta))
     return theta
 
@@ -170,7 +258,8 @@ def main():
     
     
 if __name__ == "__main__": 
-    grad_desc_simple()
-    grad_desc_less_simple()
+    #grad_desc_simple()
+    #grad_desc_less_simple()
+    grad_decent_real()
     #main()
 
